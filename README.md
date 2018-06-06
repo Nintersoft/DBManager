@@ -32,7 +32,7 @@ Mauro Mascarenhas - Nintersoft.
 # DBManager
 
 DBManager is a database interface library which was developed using the Qt library.
-This class has been created with students and young programmers in mind, making it easier for them to manage and manipulate either SQLITE and MySQL database tables.
+This class has been created with students and young programmers in mind, making it easier for them to manage and manipulate SQLITE and MySQL database tables.
 
 ## Support and Documentation
 
