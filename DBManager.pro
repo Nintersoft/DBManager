@@ -4,8 +4,8 @@
 # Developer: Mauro Mascarenhas de Araújo
 # Contact: mauro.mascarenhas@nintersoft.com
 # License: Nintersoft Open Source Code Licence
-# Date: 05 of June of 2018
-# Version: 1.0.0.0
+# Date: 16 of October of 2018
+# Version: 2.0.4.1
 #
 #-------------------------------------------------
 
@@ -15,7 +15,7 @@ TARGET = DBManager
 TEMPLATE = lib
 
 win32 {
-    VERSION = 1.0.0.0
+    VERSION = 2.0.4.1
 
     QMAKE_TARGET_COMPANY = Nintersoft
     QMAKE_TARGET_PRODUCT = DBManager
@@ -25,7 +25,7 @@ win32 {
     CONFIG += skip_target_version_ext
 }
 else {
-    VERSION = 1.0.0
+    VERSION = 2.0.4
     CONFIG += unversioned_libname
 }
 

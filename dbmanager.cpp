@@ -4,44 +4,43 @@
 # Developer: Mauro Mascarenhas de Araújo
 # Contact: mauro.mascarenhas@nintersoft.com
 # License: Nintersoft Open Source Code Licence
-# Date: 06 of June of 2018
+# Date: 16 of October of 2018
 #
 ------------------------------------------------- */
 
 #include "dbmanager.h"
 
-DBManager::DBManager(const DBManager::DBData &data, const QString &tablePrefix, DBConnectionType connectionType,
-                     const QString &connectionName){
-    this->setDBPrefix(tablePrefix);
-    this->setConnectionTypeB(connectionType);
-    this->setConnectionNameB(connectionName);
+DBManager::DBManager(const DBManager::DBData &data) :
+    QSqlDatabase(){
+    this->setDBPrefix(data.tablePrefix());
+    if (data.connectionName().isEmpty() || data.connectionName() == "default")
+        QSqlDatabase::addDatabase(getConnectionType(data.connectionType()));
+    else QSqlDatabase::addDatabase(getConnectionType(data.connectionType()), data.connectionName());
     this->setDatabaseData(data);
 }
 
-DBManager::DBManager(const QStringList &data,  DBConnectionType connectionType,
-                     const QString &connectionName){
-    validSettings = false;
-
-    DBManager::DBData dbData;
-    dbData.setHostName(data.at(0));
-    dbData.setDatabaseName(data.at(1));
-    dbData.setUserName(data.at(2));
-    dbData.setPassword(data.at(3));
-    dbData.setPort(data.at(4).toInt());
-    dbData.setNumericalPrecisionPolicy((QSql::NumericalPrecisionPolicy)data.at(5).toInt());
-    dbData.setConnectOptions(data.at(6));
-
-    this->setDBPrefix(data.at(7));
-    this->setConnectionTypeB(connectionType);
-    this->setConnectionNameB(connectionName);
-    this->setDatabaseData(dbData);
+DBManager::~DBManager(){
+    if (this->isOpen()) this->close();
+    this->removeDatabase(dbData.connectionName());
 }
 
-DBManager::~DBManager(){
-    QString connectionName =  database.connectionName();
-    if (database.isOpen()) database.close();
-    database = QSqlDatabase();
-    database.removeDatabase(connectionName);
+DBManager& DBManager::getInstance(const DBData &data){
+    if (!currentInstance){
+        if (data.databaseName().isNull() || data.connectionType() == UNDEFINED)
+            throw std::invalid_argument;
+
+        currentInstance = new DBManager(dbData);
+    }
+    return *currentInstance;
+}
+
+bool DBManager::removeInstance(){
+    if (currentInstance && !this->isOpen()){
+        delete currentInstance;
+        currentInstance = NULL;
+        return true;
+    }
+    return false;
 }
 
 bool DBManager::createTable(const QString &tableName, const QStringList &columns){
@@ -738,8 +737,15 @@ bool DBManager::dropTable(const QString &tableName){
     return dropQuery.exec();
 }
 
-QSqlQuery DBManager::runCustomQuery(){
-    return QSqlQuery(QSqlDatabase::database(database.connectionName()));
+QSqlQuery DBManager::createCustomQuery(const QString &query){
+    if (query.isEmpty() || query.isNull())
+        return QSqlQuery(QSqlDatabase::database(this->connectionName()));
+    else{
+        QSqlQuery newCommand(QSqlDatabase::database(this->connectionName()));
+        newCommand.prepare(query);
+        return newCommand;
+    }
+
 }
 
 QVariant DBManager::pixmapToVariant(const QPixmap &pixmap){
@@ -765,117 +771,90 @@ QString DBManager::getUniqueConnectionName(const QString &partname){
 }
 
 bool DBManager::setConnectionType(DBConnectionType cType){
-    if (database.isOpen()) return false;
-    DBConnectionType oldType = this->currentType;
-    this->currentType = cType;
-    if (setConnectionName(database.connectionName())) return true;
+    if (this->isOpen()) return false;
 
-    this->currentType = oldType;
+    DBConnectionType oldType = this->dbData.connectionType();
+    this->dbData.setDatabaseConnectionType(cType);
+    if (setConnectionName(this->dbData.connectionName())) return true;
+
+    this->dbData.setDatabaseConnectionType(oldType);
     return false;
 }
 
 DBManager::DBConnectionType DBManager::connectionType(){
-    return this->currentType;
-}
-
-void DBManager::setConnectionTypeB(DBConnectionType cType){
-    this->currentType = cType;
+    return this->dbData.connectionType();
 }
 
 bool DBManager::setConnectionName(const QString &cName){
-    if (database.isOpen()) return false;
+    if (this->isOpen()) return false;
 
-    QSqlDatabase::removeDatabase(database.connectionName());
-    if (currentType == DBManager::MYSQL){
-        if (cName == "default") database = QSqlDatabase::addDatabase("QMYSQL");
-        else database = QSqlDatabase::addDatabase("QMYSQL", cName);
-    }
-    else {
-        if (cName == "default") database = QSqlDatabase::addDatabase("QSQLITE");
-        else database = QSqlDatabase::addDatabase("QSQLITE", cName);
-    }
+    QSqlDatabase::removeDatabase(this->dbData.databaseName());
+    if (cName.isEmpty() || cName == "default")
+        QSqlDatabase::addDatabase(getConnectionType(this->dbData.connectionType()));
+    else QSqlDatabase::addDatabase(getConnectionType(this->dbData.connectionType()), cName);
+    this->dbData.setConnectionName(cName);
+
     return setDatabaseData(this->dbData);
 }
 
 QString DBManager::currentConnectionName(){
-    return database.connectionName();
-}
-
-void DBManager::setConnectionNameB(const QString &cName){
-    if (currentType == DBManager::MYSQL){
-        if (cName == "default") database = QSqlDatabase::addDatabase("QMYSQL");
-        else database = QSqlDatabase::addDatabase("QMYSQL", cName);
-    }
-    else {
-        if (cName == "default") database = QSqlDatabase::addDatabase("QSQLITE");
-        else database = QSqlDatabase::addDatabase("QSQLITE", cName);
-    }
+    return this->connectionName();
 }
 
 bool DBManager::setDatabaseData(const DBManager::DBData &dbData){
-    if (database.isOpen()) return false;
+    if (this->isOpen()) return false;
     this->dbData = dbData;
 
-    if (currentType == DBManager::MYSQL){
-        database.setHostName(dbData.hostName());
-        database.setDatabaseName(dbData.databaseName());
-        database.setUserName(dbData.username());
-        database.setPassword(dbData.password());
-        database.setPort(dbData.port());
-        database.setNumericalPrecisionPolicy(dbData.numericalPrecisionPolicy());
-        database.setConnectOptions(dbData.connectionOptions());
+    if (!dbData.hostName().isNull() && !dbData.hostName().isEmpty())
+        this->setHostName(dbData.hostName());
+    if (!dbData.databaseName().isNull() && !dbData.databaseName().isEmpty())
+        this->setDatabaseName(this->dbData.databaseName());
+    if (!dbData.username().isNull() && !dbData.username().isEmpty())
+        this->setUserName(this->dbData.username());
+    if (!dbData.password().isNull() && !dbData.password().isEmpty())
+        this->setPassword(this->dbData.password());
+    if (!dbData.connectionOptions().isNull() && !dbData.connectionOptions().isEmpty())
+        this->setDatabaseName(this->dbData.connectionOptions());
+    if (dbData.port() > 0)
+        this->setPort(this->dbData.port());
 
-        validSettings = !(dbData.hostName().isNull() || dbData.hostName().isEmpty()
-                            || dbData.databaseName().isNull() || dbData.databaseName().isEmpty()
-                            || dbData.username().isNull() || dbData.username().isEmpty()
-                            || dbData.password().isNull() || dbData.password().isEmpty());
-    }
-    else {
-        database.setDatabaseName(dbData.databaseName());
-        database.setNumericalPrecisionPolicy(dbData.numericalPrecisionPolicy());
-        database.setConnectOptions(dbData.connectionOptions());
-        validSettings = !(dbData.databaseName().isNull() || dbData.databaseName().isEmpty());
-    }
+    this->setNumericalPrecisionPolicy(this->dbData.numericalPrecisionPolicy());
 
     return true;
 }
 
-const DBManager::DBData DBManager::databaseData(){
+DBManager::DBData DBManager::databaseData(){
+    //Now it has to retrieve the data from QSqlDatabase, build a DBData and return it
     return this->dbData;
 }
 
 bool DBManager::setDBPrefix(const QString &prefix) {
-    if (database.isOpen()) return false;
-    this->prefix = prefix;
+    if (this->isOpen()) return false;
+    this->dbData.setTablePrefix(prefix);
     return true;
 }
 
-bool DBManager::openDB(){
-    return database.open();
+QString DBManager::getConnectionType(DBConnectionType cType){
+    switch (cType) {
+    case DB2:
+        return "QDB2";
+    case IBASE:
+        return "QIBASE";
+    case MYSQL:
+        return "QMYSQL";
+    case OCI:
+        return "QOCI";
+    case ODBC:
+        return "QODBC";
+    case PSQL:
+        return "PSQL";
+    case SQLITE:
+        return "QSQLITE";
+    case SQLITE2:
+        return "QSQLITE2";
+    case TDS:
+        return "QTDS";
+    default:
+        return QString();
+    }
 }
-
-bool DBManager::isOpen(){
-    return database.isOpen();
-}
-
-bool DBManager::isValid(){
-    return database.isValid();
-}
-
-void DBManager::closeDB(){
-    database.close();
-}
-
-QSqlError DBManager::lastError(){
-    return database.lastError();
-}
-
-bool DBManager::hasValidSettings(){
-    return this->validSettings;
-}
-
-/*
- *  DBData Methods
- *  Every DBData Method became inline methods
- *  Hence, no implementation here is necessary
- */
