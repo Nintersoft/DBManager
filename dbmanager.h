@@ -23,6 +23,7 @@
 #include <QStringList>
 #include <QByteArray>
 #include <QSqlDriver>
+#include <QMetaType>
 #include <QDateTime>
 #include <QVariant>
 #include <QPixmap>
@@ -74,7 +75,7 @@ public:
             inline QString username() const { return this->databaseUserame; }
             inline QString password() const { return this->databasePassword; }
             inline QString connectionName() const { return this->databaseConnectionName; }
-            inline QString connectionOptions() const { return this->databaseConnectionOptions; }
+            inline QString connectOptions() const { return this->databaseConnectionOptions; }
             inline QString tablePrefix() const { return this->databaseTablePrefix; }
             inline QSql::NumericalPrecisionPolicy numericalPrecisionPolicy() const { return this->databaseNumericalPrecisionPolicy; }
             inline DBConnectionType connectionType() const { return this->databaseConnectionTypeS; }
@@ -99,49 +100,65 @@ public:
     bool removeInstance();
 
     bool createTable(const QString &tableName, const QStringList &columns);
-    bool insertRow(const QString &tableName, const QStringList &columnName, const QList<QVariant> &data);
+    bool insertRow(const QString &tableName, const QStringList &columnName, const QVariantList &data);
 
     bool updateRow(const QString &tableName, const QString &columnNameCond, const QVariant &condition,
-                   const QStringList &columnName, const QList<QVariant> &data,
-                   const QString &operation = "=");
-    bool updateRow(const QString &tableName, const QStringList &columnNameCond, const QList<QVariant> &condition,
-                   const QStringList &columnName, const QList<QVariant> &data,
-                   const QString &operation = "=");
+                       const QStringList &columnName, const QVariantList &data,
+                       const QString &operation = "=");
+    bool updateRow(const QString &tableName, const QStringList &columnNameCond, const QVariantList &condition,
+                       const QStringList &columnName, const QVariantList &data,
+                       const QString &operation = "=");
 
     bool removeRow(const QString &tableName, const QString &columnNameCond, const QVariant &condition,
-                   const QString &operation = "=");
-    bool removeRow(const QString &tableName, const QStringList &columnNameCond, const QList<QVariant> &condition,
-                   const QString &operation = "=");
+                       const QString &operation = "=");
+    bool removeRow(const QString &tableName, const QStringList &columnNameCond, const QVariantList &condition,
+                       const QString &operation = "=");
 
     bool rowExists(const QString &tableName, const QString &columnNameCond, const QVariant &data,
-                   const QString &operation = "=");
-    bool rowExists(const QString &tableName, const QStringList &columnNameCond, const QList<QVariant> &data,
-                   const QString &operation = "=");
+                       const QString &operation = "=");
+    bool rowExists(const QString &tableName, const QStringList &columnNameCond, const QVariantList &data,
+                       const QString &operation = "=");
 
-    QList<QVariant> retrieveRow(const QString &tableName, const QString &columnNameCond,
-                                    const QVariant &condition, const QString &operation = "=");
-    QList<QVariant> retrieveRow(const QString &tableName, const QStringList &columnNameCond,
-                                    const QList<QVariant> &condition, const QString &operation = "=");
-    QList<QVariant> retrieveRow(const QString &tableName, const QStringList &columnNameCond,
-                                    const QList<QVariant> &condition, QStringList columnName, const QString &operation = "=");
+    QVariantList retrieveRow(const QString &tableName, const QString &columnNameCond,
+                                const QVariant &condition, const QString &operation = "=");
+    QVariantList retrieveRow(const QString &tableName, const QStringList &columnNameCond,
+                                const QVariantList &condition, const QString &operation = "=");
+    QVariantList retrieveRow(const QString &tableName, const QStringList &columnNameCond,
+                                const QVariantList &condition, QStringList columnName,
+                                const QString &operation = "=");
 
-    QList< QList<QVariant> > retrieveAll(const QString &tableName);
-    QList< QList<QVariant> > retrieveAll(const QString &tableName, const QStringList &columns);
+    QList< QVariantList > retrieveAll(const QString &tableName,
+                                        const QStringList &orderby = QStringList());
+    QList< QVariantList > retrieveAll(const QString &tableName, const QStringList &columns,
+                                          const QStringList &groupby = QStringList(),
+                                          const QStringList &orderby = QStringList());
 
-    QList< QList<QVariant> > retrieveAllCond(const QString &tableName,
-                                             const QString &columnCondition, const QVariant &condition, const QString &operation = "=");
-    QList< QList<QVariant> > retrieveAllCond(const QString &tableName,
-                                             const QStringList &columnCondition, const QList<QVariant> &condition, const QString &operation = "=");
-    QList< QList<QVariant> > retrieveAllCond(const QString &tableName, const QStringList &columnName,
-                                             const QString &columnCondition, const QVariant &condition, const QString &operation = "=");
-    QList< QList<QVariant> > retrieveAllCond(const QString &tableName, const QStringList &columnName,
-                                             const QStringList &columnCondition, const QList<QVariant> &condition, const QString &operation = "=");
+    QList< QVariantList > retrieveAllCond(const QString &tableName,
+                                              const QString &columnCondition, const QVariant &condition,
+                                              const QString &operation = "=",
+                                              const QStringList &orderby = QStringList());
+    QList<QVariantList> retrieveAllCond(const QString &tableName,
+                                          const QStringList &columnCondition, const QVariantList &condition,
+                                          const QString &operation = "=",
+                                          const QStringList &orderby = QStringList());
+    QList<QVariantList> retrieveAllCond(const QString &tableName, const QStringList &columnName,
+                                          const QString &columnCondition, const QVariant &condition,
+                                          const QString &operation = "=",
+                                          const QStringList &groupby = QStringList(),
+                                          const QStringList &orderby = QStringList());
+    QList< QVariantList > retrieveAllCond(const QString &tableName, const QStringList &columnName,
+                                              const QStringList &columnCondition, const QVariantList &condition,
+                                              const QString &operation = "=",
+                                              const QStringList &groupby = QStringList(),
+                                              const QStringList &orderby = QStringList());
 
     int rowsCount(const QString &tableName);
     int rowsCountCond(const QString &tableName,
-                        const QString &columnCondition, const QVariant &condition, const QString &operation = "=");
+                        const QString &columnCondition, const QVariant &condition,
+                        const QString &operation = "=");
     int rowsCountCond(const QString &tableName,
-                        const QStringList &columnCondition, const QList<QVariant> &condition, const QString &operation = "=");
+                          const QStringList &columnCondition, const QVariantList &condition,
+                          const QString &operation = "=");
 
     bool clearTable(const QString &tableName);
     bool dropTable(const QString &tableName);
@@ -169,20 +186,39 @@ private:
     explicit DBManager(const DBManager::DBData &data = DBData());
     ~DBManager();
 
-    static DBManager *currentInstance = NULL;
+    QString buildQuery(const QString &tableName, const QStringList &columnName = QStringList(),
+                           const QStringList &columnCondition = QStringList(),
+                           const QVariantList &condition = QVariantList(),
+                           const QString &operation = "=",
+                           const QStringList &groupby = QStringList(),
+                           const QStringList &orderby = QStringList());
+
+    QSqlQuery buildBindedQuery(const QString &tableName, const QStringList &columnName = QStringList(),
+                                   const QStringList &columnCondition = QStringList(),
+                                   const QVariantList &condition = QVariantList(),
+                                   const QString &operation = "=",
+                                   const QStringList &groupby = QStringList(),
+                                   const QStringList &orderby = QStringList());
+
+    QList<QVariantList> executeSelectQuery(QSqlQuery &query);
+
+    static DBManager *currentInstance;
 
 protected:
+    inline bool hasQuerySize() { return this->driverHasQuerySize; }
+
     using QSqlDatabase::addDatabase;
     using QSqlDatabase::cloneDatabase;
     using QSqlDatabase::connectionNames;
     using QSqlDatabase::contains;
     using QSqlDatabase::database;
     using QSqlDatabase::removeDatabase;
-    using QSqlDatabase::operator =;
+    using QSqlDatabase::operator=;
 
     QString getConnectionType(DBConnectionType cType);
 
     DBManager::DBData dbData;
+    bool driverHasQuerySize;
 };
 
 #endif // DBMANAGER_H

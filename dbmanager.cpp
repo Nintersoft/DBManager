@@ -10,6 +10,8 @@
 
 #include "dbmanager.h"
 
+DBManager* DBManager::currentInstance = NULL;
+
 DBManager::DBManager(const DBManager::DBData &data) :
     QSqlDatabase(){
     this->setDBPrefix(data.tablePrefix());
@@ -17,6 +19,8 @@ DBManager::DBManager(const DBManager::DBData &data) :
         QSqlDatabase::addDatabase(getConnectionType(data.connectionType()));
     else QSqlDatabase::addDatabase(getConnectionType(data.connectionType()), data.connectionName());
     this->setDatabaseData(data);
+
+    this->driverHasQuerySize = this->driver()->hasFeature(QSqlDriver::QuerySize);
 }
 
 DBManager::~DBManager(){
@@ -27,9 +31,9 @@ DBManager::~DBManager(){
 DBManager& DBManager::getInstance(const DBData &data){
     if (!currentInstance){
         if (data.databaseName().isNull() || data.connectionType() == UNDEFINED)
-            throw std::invalid_argument;
+            throw std::invalid_argument("");
 
-        currentInstance = new DBManager(dbData);
+        currentInstance = new DBManager(data);
     }
     return *currentInstance;
 }
@@ -44,25 +48,25 @@ bool DBManager::removeInstance(){
 }
 
 bool DBManager::createTable(const QString &tableName, const QStringList &columns){
-    if (!database.isOpen() || tableName.isEmpty() || tableName.isNull()
+    if (!this->isOpen() || tableName.isEmpty() || tableName.isNull()
             || columns.isEmpty()) return false;
 
-    QString command = "CREATE TABLE IF NOT EXISTS " + prefix + tableName + "(";
+    QString command = "CREATE TABLE IF NOT EXISTS " + this->dbData.tablePrefix() + tableName + "(";
     for (int i = 0; i < columns.length() - 1; ++i)
         command += columns.at(i) + ", ";
 
     command += (columns.at(columns.length() - 1) + ");");
 
-    QSqlQuery query(QSqlDatabase::database(database.connectionName()));
+    QSqlQuery query(QSqlDatabase::database(this->connectionName()));
     query.prepare(command);
     return query.exec();
 }
 
-bool DBManager::insertRow(const QString &tableName, const QStringList &columnName, const QList<QVariant> &data){
+bool DBManager::insertRow(const QString &tableName, const QStringList &columnName, const QVariantList &data){
     if (tableName.isEmpty() || tableName.isNull() || columnName.isEmpty()
             || data.isEmpty() || data.size() != columnName.size()) return false;
 
-    QString command = "INSERT INTO " + prefix + tableName + " (";
+    QString command = "INSERT INTO " + this->dbData.tablePrefix() + tableName + " (";
     int columns = columnName.length();
     for (int i = 0; i < columns - 1; ++i)
         command += (columnName.at(i) + ", ");
@@ -73,7 +77,7 @@ bool DBManager::insertRow(const QString &tableName, const QStringList &columnNam
 
     command += (":" + columnName.at(columns - 1) + ");");
 
-    QSqlQuery queryAdd(QSqlDatabase::database(database.connectionName()));
+    QSqlQuery queryAdd(QSqlDatabase::database(this->connectionName()));
     queryAdd.prepare(command);
 
     for (int i = 0; i < columns; ++i)
@@ -84,34 +88,21 @@ bool DBManager::insertRow(const QString &tableName, const QStringList &columnNam
 
 bool DBManager::updateRow(const QString &tableName, const QString &columnNameCond,
                             const QVariant &condition, const QStringList &columnName,
-                            const QList<QVariant> &data, const QString &operation){
+                            const QVariantList &data, const QString &operation){
     if (tableName.isEmpty() || tableName.isNull() || columnNameCond.isEmpty()
             || columnNameCond.isNull() || columnName.isEmpty() || columnName.size() != data.size()) return false;
 
     QString command;
     int columns = columnName.length();
 
-    if (currentType == SQLITE){
-        command = "UPDATE " + prefix + tableName + " SET (";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnName.at(i) + ", ");
+    command = "UPDATE " + this->dbData.tablePrefix() + tableName + " SET ";
+    for (int i = 0; i < columns - 1; ++i)
+        command += (columnName.at(i) + " = :" + columnName.at(i) + ", ");
 
-        command += (columnName.at(columns - 1) + ") = (");
-        for (int i = 0; i < columns - 1; ++i)
-            command += (":" + columnName.at(i) + ", ");
+    command += (columnName.at(columns - 1) + " = :" + columnName.at(columns - 1) + " WHERE " + columnNameCond + " "
+                + operation + " :" + columnNameCond + "c;");
 
-        command += (":" + columnName.at(columns - 1) + ") WHERE (" +
-                        columnNameCond + ") " + operation + " (:" + columnNameCond + "c);");
-    }
-    else {
-        command = "UPDATE " + prefix + tableName + " SET ";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnName.at(i) + " = :" + columnName.at(i) + ", ");
-
-        command += (columnName.at(columns - 1) + " = :" + columnName.at(columns - 1) + " WHERE " + columnNameCond + " = :" + columnNameCond + "c;");
-    }
-
-    QSqlQuery queryAdd(QSqlDatabase::database(database.connectionName()));
+    QSqlQuery queryAdd(QSqlDatabase::database(this->connectionName()));
     queryAdd.prepare(command);
     queryAdd.bindValue(":" + columnNameCond + "c", condition);
     for (int i = 0; i < columns; ++i)
@@ -121,8 +112,8 @@ bool DBManager::updateRow(const QString &tableName, const QString &columnNameCon
 }
 
 bool DBManager::updateRow(const QString &tableName, const QStringList &columnNameCond,
-                            const QList<QVariant> &condition, const QStringList &columnName,
-                            const QList<QVariant> &data, const QString &operation){
+                            const QVariantList &condition, const QStringList &columnName,
+                            const QVariantList &data, const QString &operation){
     if (tableName.isEmpty() || tableName.isNull() || condition.isEmpty()
             || columnNameCond.isEmpty() || columnName.isEmpty() || data.isEmpty()
             || columnNameCond.size() != condition.size() || columnName.size() != data.size()) return false;
@@ -131,39 +122,17 @@ bool DBManager::updateRow(const QString &tableName, const QStringList &columnNam
     int columns = columnName.length();
     int columnsS = columnNameCond.length();
 
-    if (currentType == SQLITE){
-        command = "UPDATE " + prefix + tableName + " SET (";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnName.at(i) + ", ");
+    command = "UPDATE " + this->dbData.tablePrefix() + tableName + " SET ";
+    for (int i = 0; i < columns - 1; ++i)
+        command += (columnName.at(i) + " = :" + columnName.at(i) + ", ");
 
-        command += (columnName.at(columns - 1) + ") = (");
-        for (int i = 0; i < columns - 1; ++i)
-            command += (":" + columnName.at(i) + ", ");
+    command += (columnName.at(columns - 1) + " = :" + columnName.at(columns - 1) + " WHERE ");
+    for (int i = 0; i < columnsS - 1; ++i)
+        command += (columnNameCond.at(i) + " " + operation + " :" + columnNameCond.at(i) + "c AND ");
 
-        command += (":" + columnName.at(columns - 1) + ") WHERE (");
+    command += (columnNameCond.at(columnsS - 1) + " " + operation + " :" + columnNameCond.at(columnsS - 1) + "c;");
 
-        for (int i = 0; i < columnsS - 1; ++i)
-            command += (columnNameCond.at(i) + ", ");
-
-        command += (columnNameCond.at(columnsS - 1) + ") " + operation + " (");
-        for (int i = 0; i < columnsS - 1; ++i)
-            command += (":" + columnNameCond.at(i) + "c, ");
-
-        command += (":" + columnNameCond.at(columnsS - 1) + "c);");
-    }
-    else {
-        command = "UPDATE " + prefix + tableName + " SET ";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnName.at(i) + " = :" + columnName.at(i) + ", ");
-
-        command += (columnName.at(columns - 1) + " = :" + columnName.at(columns - 1) + " WHERE ");
-        for (int i = 0; i < columnsS - 1; ++i)
-            command += (columnNameCond.at(i) + " " + operation + " :" + columnNameCond.at(i) + "c AND ");
-
-        command += (columnNameCond.at(columnsS - 1) + " " + operation + " :" + columnNameCond.at(columnsS - 1) + "c;");
-    }
-
-    QSqlQuery queryUpdate(QSqlDatabase::database(database.connectionName()));
+    QSqlQuery queryUpdate(QSqlDatabase::database(this->connectionName()));
     queryUpdate.prepare(command);
     for (int i = 0; i < columnsS; ++i)
         queryUpdate.bindValue(":" + columnNameCond.at(i) + "c", condition.at(i));
@@ -175,17 +144,17 @@ bool DBManager::updateRow(const QString &tableName, const QStringList &columnNam
 }
 
 bool DBManager::removeRow(const QString &tableName, const QString &columnNameCond,
-                          const QVariant &condition, const QString &operation){
+                            const QVariant &condition, const QString &operation){
     if (tableName.isEmpty() || tableName.isNull() || condition.isNull()
             || columnNameCond.isEmpty() || columnNameCond.isNull()) return false;
 
     if (!rowExists(tableName, columnNameCond, condition, operation)) return false;
 
-    QSqlQuery removeQuery(QSqlDatabase::database(database.connectionName()));
+    QSqlQuery removeQuery(QSqlDatabase::database(this->connectionName()));
     QString command;
 
-    if (currentType == SQLITE) command = "DELETE FROM " + prefix + tableName + " WHERE (" + columnNameCond + ") "+ operation + " (:" + columnNameCond + ");";
-    else command = "DELETE FROM " + prefix + tableName + " WHERE " + columnNameCond + " " + operation + " :" + columnNameCond + ";";
+    command = "DELETE FROM " + this->dbData.tablePrefix() + tableName + " WHERE "
+                + columnNameCond + " " + operation + " :" + columnNameCond + ";";
 
     removeQuery.prepare(command);
     removeQuery.bindValue(":" + columnNameCond, condition);
@@ -194,35 +163,22 @@ bool DBManager::removeRow(const QString &tableName, const QString &columnNameCon
 }
 
 bool DBManager::removeRow(const QString &tableName, const QStringList &columnNameCond,
-                          const QList<QVariant> &condition, const QString &operation){
+                            const QVariantList &condition, const QString &operation){
     if (tableName.isEmpty() || tableName.isNull()
             || condition.isEmpty() || columnNameCond.isEmpty()
             || columnNameCond.size() != condition.size()) return false;
 
     if (!rowExists(tableName, columnNameCond, condition, operation)) return false;
 
-    QSqlQuery removeQuery(QSqlDatabase::database(database.connectionName()));
+    QSqlQuery removeQuery(QSqlDatabase::database(this->connectionName()));
     QString command;
     int columns = columnNameCond.length();
 
-    if (currentType == SQLITE){
-        command = "DELETE FROM " + prefix + tableName + " WHERE (";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnNameCond.at(i) + ", ");
+    command = "DELETE FROM " + this->dbData.tablePrefix() + tableName + " WHERE ";
+    for (int i = 0; i < columns - 1; ++i)
+        command += (columnNameCond.at(i) + " " + operation + " :" + columnNameCond.at(i) + " AND ");
 
-        command += (columnNameCond.at(columns - 1) + ") " + operation + " (");
-        for (int i = 0; i < columns - 1; ++i)
-            command += (":" + columnNameCond.at(i) + ", ");
-
-        command += (":" + columnNameCond.at(columns - 1) + ");");
-    }
-    else {
-        command = "DELETE FROM " + prefix + tableName + " WHERE ";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnNameCond.at(i) + " " + operation + " :" + columnNameCond.at(i) + " AND ");
-
-        command += (columnNameCond.at(columns - 1) + " " + operation + " :" + columnNameCond.at(columns - 1) + ";");
-    }
+    command += (columnNameCond.at(columns - 1) + " " + operation + " :" + columnNameCond.at(columns - 1) + ";");
 
     removeQuery.prepare(command);
     for (int i = 0; i < columns; ++i)
@@ -233,19 +189,11 @@ bool DBManager::removeRow(const QString &tableName, const QStringList &columnNam
 }
 
 bool DBManager::rowExists(const QString &tableName, const QString &columnNameCond,
-                          const QVariant &data, const QString &operation){
-    if (tableName.isEmpty() || tableName.isNull() || data.isNull()
-            || columnNameCond.isEmpty() || columnNameCond.isNull()) return false;
-
-    QSqlQuery checkQuery(QSqlDatabase::database(database.connectionName()));
-
-    QString command;
-    if (currentType == SQLITE) command = "SELECT " + columnNameCond + " FROM " + prefix + tableName + " WHERE (" + columnNameCond + ") " + operation + " (:" + columnNameCond + ");";
-    else command = "SELECT " + columnNameCond + " FROM " + prefix + tableName + " WHERE " + columnNameCond + " " + operation + " :" + columnNameCond + ";";
-
-    checkQuery.prepare(command);
-    checkQuery.bindValue(":" + columnNameCond, data);
-
+                            const QVariant &data, const QString &operation){
+    QSqlQuery checkQuery = buildBindedQuery(tableName, QStringList(),
+                                            QStringList() << columnNameCond,
+                                            QVariantList() << data,
+                                            operation);
     bool exists = false;
     if (checkQuery.exec())
         exists = checkQuery.next();
@@ -254,390 +202,139 @@ bool DBManager::rowExists(const QString &tableName, const QString &columnNameCon
 }
 
 bool DBManager::rowExists(const QString &tableName, const QStringList &columnNameCond,
-                          const QList<QVariant> &data, const QString &operation){
-    if (tableName.isEmpty() || tableName.isNull() || data.isEmpty()
-            || columnNameCond.isEmpty() || columnNameCond.size() != data.size()) return false;
-
-    QString command;
-    int columns = columnNameCond.length();
-
-    if (currentType == SQLITE){
-        command = "SELECT * FROM " + prefix + tableName + " WHERE (";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnNameCond.at(i) + ", ");
-
-        command += (columnNameCond.at(columns - 1) + ") " + operation + " (");
-        for (int i = 0; i < columns - 1; ++i)
-            command += (":" + columnNameCond.at(i) + ", ");
-
-        command += (":" + columnNameCond.at(columns - 1) + ");");
-    }
-    else {
-        command = "SELECT * FROM " + prefix + tableName + " WHERE ";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnNameCond.at(i) + " " + operation + " :" + columnNameCond.at(i) + " AND ");
-
-        command += (columnNameCond.at(columns - 1) + " " + operation + " :" + columnNameCond.at(columns - 1) + ";");
-    }
-
-    QSqlQuery checkQuery(QSqlDatabase::database(database.connectionName()));
-    checkQuery.prepare(command);
-    for (int i = 0; i < columns; ++i)
-        checkQuery.bindValue(":" + columnNameCond.at(i), data.at(i));
-
+                            const QVariantList &data, const QString &operation){
+    QSqlQuery checkQuery = buildBindedQuery(tableName, QStringList(),
+                                            columnNameCond, data,
+                                            operation);
     bool exists = false;
     if (checkQuery.exec())
         exists = checkQuery.next();
     return exists;
 }
 
-QList<QVariant> DBManager::retrieveRow(const QString &tableName, const QString &columnNameCond,
+QVariantList DBManager::retrieveRow(const QString &tableName, const QString &columnNameCond,
                                         const QVariant &condition, const QString &operation){
-    QList<QVariant> retrievedData;
-
-    QSqlQuery retrieveQuery(QSqlDatabase::database(database.connectionName()));
-
-    QString command;
-    if (currentType == SQLITE) command = "SELECT * FROM " + prefix + tableName + " WHERE (" + columnNameCond + ") " + operation + " (:" + columnNameCond + ");";
-    else command = "SELECT * FROM " + prefix + tableName + " WHERE " + columnNameCond + " " + operation + " :" + columnNameCond + ";";
-
-    retrieveQuery.prepare(command);
-    retrieveQuery.bindValue(":" + columnNameCond, condition);
+    QSqlQuery retrieveQuery = buildBindedQuery(tableName, QStringList(),
+                                               QStringList() << columnNameCond,
+                                               QVariantList() << condition,
+                                               operation);
+    QVariantList retrievedData;
 
     if (retrieveQuery.exec()){
         if (retrieveQuery.next()){
-            int count = 0;
-            while (retrieveQuery.value(count).isValid()){
-                retrievedData << retrieveQuery.value(count);
-                ++count;
-            }
+            int max = retrieveQuery.record().count();
+            for (int i = 0; i < max; ++i)
+                retrievedData << retrieveQuery.value(i);
         }
     }
-
     return retrievedData;
 }
 
-QList<QVariant> DBManager::retrieveRow(const QString &tableName, const QStringList &columnNameCond,
-                                        const QList<QVariant> &condition, const QString &operation){
-
-    QString command;
-    int columns = columnNameCond.length();
-
-    if (currentType == SQLITE){
-        command = "SELECT * FROM " + prefix + tableName + " WHERE (";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnNameCond.at(i) + ", ");
-
-        command += (columnNameCond.at(columns - 1) + ") "+ operation + " (");
-        for (int i = 0; i < columns - 1; ++i)
-            command += (":" + columnNameCond.at(i) + ", ");
-
-        command += (":" + columnNameCond.at(columns - 1) + ");");
-    }
-    else {
-        command = "SELECT * FROM " + prefix + tableName + " WHERE ";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnNameCond.at(i) + " " + operation + " :" + columnNameCond.at(i) + " AND ");
-
-        command += (columnNameCond.at(columns - 1) + " " + operation + " :" + columnNameCond.at(columns - 1) + ";");
-    }
-
-    QSqlQuery retrieveQuery(QSqlDatabase::database(database.connectionName()));
-    retrieveQuery.prepare(command);
-    for (int i = 0; i < columns; ++i)
-        retrieveQuery.bindValue(":" + columnNameCond.at(i), condition.at(i));
-
-    QList<QVariant> retrievedData;
+QVariantList DBManager::retrieveRow(const QString &tableName, const QStringList &columnNameCond,
+                                        const QVariantList &condition, const QString &operation){
+    QSqlQuery retrieveQuery = buildBindedQuery(tableName, QStringList(),
+                                               columnNameCond, condition,
+                                               operation);
+    QVariantList retrievedData;
 
     if (retrieveQuery.exec()){
         if (retrieveQuery.next()){
-            int count = 0;
-            while (retrieveQuery.value(count).isValid()){
-                retrievedData << retrieveQuery.value(count);
-                ++count;
-            }
+            int max = retrieveQuery.record().count();
+            for (int i = 0; i < max; ++i)
+                retrievedData << retrieveQuery.value(i);
         }
     }
-
     return retrievedData;
 }
 
-QList<QVariant> DBManager::retrieveRow(const QString &tableName, const QStringList &columnNameCond,
-                                        const QList<QVariant> &condition, QStringList columnName, const QString &operation){
-    int columnsc = columnName.length();
-    int columns = columnNameCond.length();
-    QString command = "SELECT ";
-
-    for(int i = 0; i < columnsc - 1; ++i)
-        command += (columnName.at(i) + ", ");
-
-    command += (columnName.at(columnsc - 1) + " FROM " + prefix + tableName + " WHERE ");
-
-    if (currentType == SQLITE){
-        command += "(";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnNameCond.at(i) + ", ");
-
-        command += (columnNameCond.at(columns - 1) + ") "+ operation + " (");
-        for (int i = 0; i < columns - 1; ++i)
-            command += (":" + columnNameCond.at(i) + ", ");
-
-        command += (":" + columnNameCond.at(columns - 1) + ");");
-    }
-    else {
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnNameCond.at(i) + " " + operation + " :" + columnNameCond.at(i) + " AND ");
-
-        command += (columnNameCond.at(columns - 1) + " " + operation + " :" + columnNameCond.at(columns - 1) + ";");
-    }
-
-    QSqlQuery retrieveQuery(QSqlDatabase::database(database.connectionName()));
-    retrieveQuery.prepare(command);
-    for (int i = 0; i < columns; ++i)
-        retrieveQuery.bindValue(":" + columnNameCond.at(i), condition.at(i));
-
-    QList<QVariant> retrievedData;
+QVariantList DBManager::retrieveRow(const QString &tableName, const QStringList &columnNameCond,
+                                       const QVariantList &condition, QStringList columnName,
+                                       const QString &operation){
+    QSqlQuery retrieveQuery = buildBindedQuery(tableName, columnName,
+                                               columnNameCond, condition,
+                                               operation);
+    QVariantList retrievedData;
 
     if (retrieveQuery.exec()){
         if (retrieveQuery.next()){
-            int count = 0;
-            while (retrieveQuery.value(count).isValid()){
-                retrievedData << retrieveQuery.value(count);
-                ++count;
-            }
+            int max = retrieveQuery.record().count();
+            for (int i = 0; i < max; ++i)
+                retrievedData << retrieveQuery.value(i);
         }
     }
-
     return retrievedData;
 }
 
-QList<QList<QVariant> > DBManager::retrieveAll(const QString &tableName){
-    QSqlQuery retrieveQuery(QSqlDatabase::database(database.connectionName()));
-    QString command = "SELECT * FROM " + prefix + tableName + ";";
-    retrieveQuery.prepare(command);
-
-    QList<QList<QVariant> > results;
-
-    if (retrieveQuery.exec()){
-        int currentRow = 0;
-        while(retrieveQuery.next()){
-            results << QList<QVariant>();
-            int count = 0;
-            while (retrieveQuery.value(count).isValid()){
-                results[currentRow] << retrieveQuery.value(count);
-                count++;
-            }
-            currentRow++;
-        }
-    }
-
-    return results;
+QList<QVariantList> DBManager::retrieveAll(const QString &tableName, const QStringList &orderby){
+    QSqlQuery retrieveQuery = buildBindedQuery(tableName, QStringList(),
+                                               QStringList(), QVariantList(),
+                                               "=", QStringList(),
+                                               orderby);
+    return executeSelectQuery(retrieveQuery);
 }
 
-QList<QList<QVariant> > DBManager::retrieveAll(const QString &tableName, const QStringList &columns){
-    QSqlQuery retrieveQuery(QSqlDatabase::database(database.connectionName()));
-
-    QString command = "SELECT ";
-    for (int i = 0; i < columns.length() - 1; ++ i)
-        command += (columns.at(i) + ", ");
-
-    command += (columns.at(columns.length() - 1) + " FROM " + prefix + tableName + ";");
-    retrieveQuery.prepare(command);
-
-    QList<QList<QVariant> > results;
-
-    if (retrieveQuery.exec()){
-        int currentRow = 0;
-        while(retrieveQuery.next()){
-            results << QList<QVariant>();
-            for (int i = 0; i < columns.length(); ++i)
-                results[currentRow] << retrieveQuery.value(i);
-            currentRow++;
-        }
-    }
-
-    return results;
+QList<QVariantList> DBManager::retrieveAll(const QString &tableName, const QStringList &columns,
+                                            const QStringList &groupby, const QStringList &orderby){
+    QSqlQuery retrieveQuery = buildBindedQuery(tableName, columns,
+                                               QStringList(), QVariantList(),
+                                               "=", groupby, orderby);
+    return executeSelectQuery(retrieveQuery);
 }
 
-QList<QList<QVariant> > DBManager::retrieveAllCond(const QString &tableName, const QString &columnCondition,
-                                                    const QVariant &condition, const QString &operation){
-    QSqlQuery retrieveQuery(QSqlDatabase::database(database.connectionName()));
-
-    QString command;
-    if (currentType == SQLITE) command = "SELECT * FROM " + prefix + tableName + " WHERE (" + columnCondition + ") " + operation + " (:" + columnCondition + ");";
-    else command = "SELECT * FROM " + prefix + tableName + " WHERE " + columnCondition + " " + operation + " :" + columnCondition + ";";
-
-    retrieveQuery.prepare(command);
-    retrieveQuery.bindValue(":" + columnCondition, condition);
-
-    QList<QList<QVariant> > results;
-
-    if (retrieveQuery.exec()){
-        int currentRow = 0;
-        while(retrieveQuery.next()){
-            results << QList<QVariant>();
-            int count = 0;
-            while (retrieveQuery.value(count).isValid()){
-                results[currentRow] << retrieveQuery.value(count);
-                count++;
-            }
-            currentRow++;
-        }
-    }
-
-    return results;
+QList<QVariantList> DBManager::retrieveAllCond(const QString &tableName, const QString &columnCondition,
+                                                   const QVariant &condition, const QString &operation,
+                                                   const QStringList &orderby){
+    QSqlQuery retrieveQuery = buildBindedQuery(tableName, QStringList(),
+                                               QStringList() << columnCondition,
+                                               QList< QVariant >() << condition,
+                                               operation, QStringList(),
+                                               orderby);
+    return executeSelectQuery(retrieveQuery);
 }
 
-QList<QList<QVariant> > DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnCondition,
-                                                    const QList<QVariant> &condition, const QString &operation){
-    QSqlQuery retrieveQuery(QSqlDatabase::database(database.connectionName()));
-
-    QString command;
-    int columns = columnCondition.length();
-
-    if (currentType == SQLITE){
-        command = "SELECT * FROM " + prefix + tableName + " WHERE (";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnCondition.at(i) + ", ");
-
-        command += (columnCondition.at(columns - 1) + ") "+ operation + " (");
-        for (int i = 0; i < columns - 1; ++i)
-            command += (":" + columnCondition.at(i) + ", ");
-
-        command += (":" + columnCondition.at(columns - 1) + ");");
-    }
-    else {
-        command = "SELECT * FROM " + prefix + tableName + " WHERE ";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnCondition.at(i) + " " + operation + " :" + columnCondition.at(i) + " AND ");
-
-        command += (columnCondition.at(columns - 1) + " " + operation + " :" + columnCondition.at(columns - 1) + ";");
-    }
-
-    retrieveQuery.prepare(command);
-    for (int i = 0; i < columnCondition.length(); ++i)
-        retrieveQuery.bindValue(":" + columnCondition.at(i), QVariant(condition.at(i)));
-
-    QList<QList<QVariant> > results;
-
-    if (retrieveQuery.exec()){
-        int currentRow = 0;
-        while(retrieveQuery.next()){
-            results << QList<QVariant>();
-            int count = 0;
-            while (retrieveQuery.value(count).isValid()){
-                results[currentRow] << retrieveQuery.value(count);
-                count++;
-            }
-            currentRow++;
-        }
-    }
-
-    return results;
+QList<QVariantList> DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnCondition,
+                                                   const QVariantList &condition, const QString &operation,
+                                                   const QStringList &orderby){
+    QSqlQuery retrieveQuery = buildBindedQuery(tableName, QStringList(),
+                                               columnCondition, condition,
+                                               operation, QStringList(),
+                                               orderby);
+    return executeSelectQuery(retrieveQuery);
 }
 
-QList<QList<QVariant> > DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnName,
-                                                    const QString &columnCondition, const QVariant &condition,
-                                                    const QString &operation){
-    QSqlQuery retrieveQuery(QSqlDatabase::database(database.connectionName()));
-    int columns = columnName.length();
-    QString command = "SELECT ";
-    for (int i = 0; i < columns - 1; ++i)
-        command += (columnName.at(i) + ", ");
-
-    command += (columnName.at(columns - 1) + " FROM " + prefix + tableName + " WHERE ");
-    if (currentType == SQLITE) command += ("(" + columnCondition + ") " + operation + " (:" + columnCondition + ");");
-    else command += (columnCondition + " " + operation + " :" + columnCondition + ";");
-
-    retrieveQuery.prepare(command);
-    retrieveQuery.bindValue(":" + columnCondition, condition);
-
-    QList<QList<QVariant> > results;
-
-    if (retrieveQuery.exec()){
-        int currentRow = 0;
-        while(retrieveQuery.next()){
-            results << QList<QVariant>();
-            int count = 0;
-            while (retrieveQuery.value(count).isValid()){
-                results[currentRow] << retrieveQuery.value(count);
-                count++;
-            }
-            currentRow++;
-        }
-    }
-
-    return results;
+QList<QVariantList> DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnName,
+                                                   const QString &columnCondition, const QVariant &condition,
+                                                   const QString &operation, const QStringList &groupby,
+                                                   const QStringList &orderby){
+    QSqlQuery retrieveQuery = buildBindedQuery(tableName, columnName,
+                                               QStringList() << columnCondition,
+                                               QList< QVariant >() << condition,
+                                               operation, groupby,
+                                               orderby);
+    return executeSelectQuery(retrieveQuery);
 }
 
-QList<QList<QVariant> > DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnName,
-                                                    const QStringList &columnCondition, const QList<QVariant> &condition,
-                                                    const QString &operation){
-    QSqlQuery retrieveQuery(QSqlDatabase::database(database.connectionName()));
-    int columnsN = columnName.length();
-    int columns = columnCondition.length();
-
-    QString command = "SELECT ";
-    for (int i = 0; i < columnsN - 1; ++i)
-        command += (columnName.at(i) + ", ");
-
-    command += (columnName.at(columnsN - 1) + " FROM " + prefix + tableName + " WHERE ");
-
-    if (currentType == SQLITE){
-        command += "(";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnCondition.at(i) + ", ");
-
-        command += (columnCondition.at(columns - 1) + ") "+ operation + " (");
-        for (int i = 0; i < columns - 1; ++i)
-            command += (":" + columnCondition.at(i) + ", ");
-
-        command += (columnCondition.at(columns - 1) + ");");
-    }
-    else{
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnCondition.at(i) + " " + operation + " :" + columnCondition.at(i) + " AND ");
-
-        command += (columnCondition.at(columns - 1) + " " + operation + " :" + columnCondition.at(columns - 1) + ";");
-    }
-
-    retrieveQuery.prepare(command);
-    for (int i = 0; i < columns; ++i)
-        retrieveQuery.bindValue(":" + columnCondition.at(i), condition.at(i));
-
-
-    QList<QList<QVariant> > results;
-
-    if (retrieveQuery.exec()){
-        int currentRow = 0;
-        while(retrieveQuery.next()){
-            results << QList<QVariant>();
-            int count = 0;
-            while (retrieveQuery.value(count).isValid()){
-                results[currentRow] << retrieveQuery.value(count);
-                count++;
-            }
-            currentRow++;
-        }
-    }
-
-    return results;
+QList<QVariantList> DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnName,
+                                                   const QStringList &columnCondition, const QVariantList &condition,
+                                                   const QString &operation, const QStringList &groupby,
+                                                   const QStringList &orderby){
+    QSqlQuery retrieveQuery = buildBindedQuery(tableName, columnName,
+                                               columnCondition, condition,
+                                               operation, groupby,
+                                               orderby);
+    return executeSelectQuery(retrieveQuery);
 }
 
 int DBManager::rowsCount(const QString &tableName){
-    if (tableName.isEmpty() || tableName.isNull()) return -1;
 
-    QSqlQuery countQuery(QSqlDatabase::database(database.connectionName()));
-    QString command = "SELECT * FROM " + prefix + tableName;
+    QSqlQuery countQuery(QSqlDatabase::database(this->connectionName()));
+    QString command = buildQuery(tableName);
     countQuery.prepare(command);
 
-    if (database.driver()->hasFeature(QSqlDriver::QuerySize)){
-        if (countQuery.exec()) return countQuery.size();
-        return -1;
-    }
-
-    int counter = 0;
     if (countQuery.exec()){
+        if (this->hasQuerySize()) return countQuery.size();
+
+        int counter = 0;
         while (countQuery.next()) counter++;
         return counter;
     }
@@ -646,25 +343,14 @@ int DBManager::rowsCount(const QString &tableName){
 
 int DBManager::rowsCountCond(const QString &tableName, const QString &columnCondition,
                                 const QVariant &condition, const QString &operation){
-    if (tableName.isEmpty() || tableName.isNull() || columnCondition.isEmpty() || columnCondition.isNull()
-            || condition.isNull()) return -1;
-
-    QSqlQuery countQuery(QSqlDatabase::database(database.connectionName()));
-
-    QString command;
-    if (currentType == SQLITE) command = "SELECT * FROM " + prefix + tableName + " WHERE (" + columnCondition + ") " + operation + " (:" + columnCondition + ");";
-    else command = "SELECT * FROM " + prefix + tableName + " WHERE " + columnCondition + " " + operation + " :" + columnCondition + ";";
-
-    countQuery.prepare(command);
-    countQuery.bindValue(":" + columnCondition, condition);
-
-    if (database.driver()->hasFeature(QSqlDriver::QuerySize)){
-        if (countQuery.exec()) return countQuery.size();
-        return -1;
-    }
-
-    int counter = 0;
+    QSqlQuery countQuery = buildBindedQuery(tableName, QStringList(),
+                                            QStringList() << columnCondition,
+                                            QVariantList() << condition,
+                                            operation);
     if (countQuery.exec()){
+        if (this->hasQuerySize()) return countQuery.size();
+
+        int counter = 0;
         while (countQuery.next()) counter++;
         return counter;
     }
@@ -672,45 +358,14 @@ int DBManager::rowsCountCond(const QString &tableName, const QString &columnCond
 }
 
 int DBManager::rowsCountCond(const QString &tableName, const QStringList &columnCondition,
-                                const QList<QVariant> &condition, const QString &operation){
-    if (tableName.isEmpty() || tableName.isNull() || columnCondition.isEmpty()
-            || condition.isEmpty() || columnCondition.size() != condition.size()) return -1;
-
-    QSqlQuery countQuery(QSqlDatabase::database(database.connectionName()));
-
-    QString command;
-    int columns = columnCondition.length();
-
-    if (currentType == SQLITE){
-        command = "SELECT * FROM " + prefix + tableName  + " WHERE (";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnCondition.at(i) + ", ");
-
-        command += (columnCondition.at(columns - 1) + ") "+ operation + " (");
-        for (int i = 0; i < columns - 1; ++i)
-            command += (":" + columnCondition.at(i) + ", ");
-
-        command += (":" + columnCondition.at(columns - 1) + ");");
-    }
-    else {
-        command = "SELECT * FROM " + prefix + tableName + " WHERE ";
-        for (int i = 0; i < columns - 1; ++i)
-            command += (columnCondition.at(i) + " " + operation + " :" + columnCondition.at(i) + " AND ");
-
-        command += (columnCondition.at(columns - 1) + " " + operation + " :" + columnCondition.at(columns - 1) + ";");
-    }
-
-    countQuery.prepare(command);
-    for (int i = 0; i < columns; ++i)
-        countQuery.bindValue(":" + columnCondition.at(i), condition.at(i));
-
-    if (database.driver()->hasFeature(QSqlDriver::QuerySize)){
-        if (countQuery.exec()) return countQuery.size();
-        return -1;
-    }
-
-    int counter = 0;
+                                const QVariantList &condition, const QString &operation){
+    QSqlQuery countQuery = buildBindedQuery(tableName, QStringList(),
+                                            columnCondition, condition,
+                                            operation);
     if (countQuery.exec()){
+        if (this->hasQuerySize()) return countQuery.size();
+
+        int counter = 0;
         while (countQuery.next()) counter++;
         return counter;
     }
@@ -720,8 +375,8 @@ int DBManager::rowsCountCond(const QString &tableName, const QStringList &column
 bool DBManager::clearTable(const QString &tableName){
     if (tableName.isEmpty() || tableName.isNull()) return false;
 
-    QSqlQuery dropQuery(QSqlDatabase::database(database.connectionName()));
-    QString command = "DELETE FROM " + prefix + tableName + ";";
+    QSqlQuery dropQuery(QSqlDatabase::database(this->connectionName()));
+    QString command = "DELETE FROM " + this->dbData.tablePrefix() + tableName + ";";
     dropQuery.prepare(command);
 
     return dropQuery.exec();
@@ -730,8 +385,8 @@ bool DBManager::clearTable(const QString &tableName){
 bool DBManager::dropTable(const QString &tableName){
     if (tableName.isEmpty() || tableName.isNull()) return false;
 
-    QSqlQuery dropQuery(QSqlDatabase::database(database.connectionName()));
-    QString command = "DROP TABLE " + prefix + tableName + ";";
+    QSqlQuery dropQuery(QSqlDatabase::database(this->connectionName()));
+    QString command = "DROP TABLE " + this->dbData.tablePrefix() + tableName + ";";
     dropQuery.prepare(command);
 
     return dropQuery.exec();
@@ -745,7 +400,6 @@ QSqlQuery DBManager::createCustomQuery(const QString &query){
         newCommand.prepare(query);
         return newCommand;
     }
-
 }
 
 QVariant DBManager::pixmapToVariant(const QPixmap &pixmap){
@@ -813,8 +467,8 @@ bool DBManager::setDatabaseData(const DBManager::DBData &dbData){
         this->setUserName(this->dbData.username());
     if (!dbData.password().isNull() && !dbData.password().isEmpty())
         this->setPassword(this->dbData.password());
-    if (!dbData.connectionOptions().isNull() && !dbData.connectionOptions().isEmpty())
-        this->setDatabaseName(this->dbData.connectionOptions());
+    if (!dbData.connectOptions().isNull() && !dbData.connectOptions().isEmpty())
+        this->setConnectOptions(this->dbData.connectOptions());
     if (dbData.port() > 0)
         this->setPort(this->dbData.port());
 
@@ -824,7 +478,13 @@ bool DBManager::setDatabaseData(const DBManager::DBData &dbData){
 }
 
 DBManager::DBData DBManager::databaseData(){
-    //Now it has to retrieve the data from QSqlDatabase, build a DBData and return it
+    this->dbData.setHostName(this->hostName());
+    this->dbData.setDatabaseName(this->databaseName());
+    this->dbData.setUserName(this->userName());
+    this->dbData.setPassword(this->password());
+    this->dbData.setConnectOptions(this->connectOptions());
+    this->dbData.setPort(this->port());
+    this->dbData.setNumericalPrecisionPolicy(this->numericalPrecisionPolicy());
     return this->dbData;
 }
 
@@ -857,4 +517,103 @@ QString DBManager::getConnectionType(DBConnectionType cType){
     default:
         return QString();
     }
+}
+
+QString DBManager::buildQuery(const QString &tableName, const QStringList &columnName,
+                                  const QStringList &columnCondition, const QVariantList &condition,
+                                  const QString &operation, const QStringList &groupby,
+                                  const QStringList &orderby){
+    if (tableName.isEmpty() || (columnCondition.size() != condition.size()))
+        return QString();
+
+    int columnsN = columnName.length() - 1,
+        columns = columnCondition.length() - 1,
+        groupbySize = groupby.size() - 1,
+        orderbySize = orderby.length() - 1;
+
+    QString command = "SELECT ";
+    if (columnName.isEmpty())
+         command += " *";
+    else {
+        for (int i = 0; i < columnsN; ++i)
+            command += (columnName.at(i) + ", ");
+        command += (columnName.at(columnsN));
+    }
+
+    command += (" FROM " + this->dbData.tablePrefix() + tableName);
+
+    if (!columnCondition.isEmpty()){
+        command += " WHERE ";
+        for (int i = 0; i < columns; ++i)
+            command += (columnCondition.at(i) + " " + operation + " :" + columnCondition.at(i) + " AND ");
+        command += (columnCondition.at(columns) + " " + operation + " :" + columnCondition.at(columns));
+    }
+
+    if (!groupby.isEmpty()){
+        command += " GROUP BY ";
+        for (int i = 0; i < groupbySize; ++i)
+            command += (groupby.at(i) + ", ");
+        command += (groupby.at(groupbySize));
+    }
+
+    if (!orderby.isEmpty()){
+        command += " ORDER BY ";
+        for (int i = 0; i < orderbySize; ++i)
+            command += (orderby.at(i) + ", ");
+        command += orderby.at(orderbySize);
+    }
+
+    command += ";";
+
+    return command;
+}
+
+QSqlQuery DBManager::buildBindedQuery(const QString &tableName, const QStringList &columnName,
+                                          const QStringList &columnCondition, const QVariantList &condition,
+                                          const QString &operation, const QStringList &groupby,
+                                          const QStringList &orderby){
+    QString command = buildQuery(tableName, columnName,
+                                 columnCondition, condition,
+                                 operation, groupby,
+                                 orderby);
+
+    if (command.isEmpty()) return QSqlQuery();
+    int columns = columnCondition.length();
+
+    QSqlQuery retrieveQuery(QSqlDatabase::database(this->connectionName()));
+    retrieveQuery.prepare(command);
+    for (int i = 0; i < columns; ++i)
+        retrieveQuery.bindValue(":" + columnCondition.at(i), condition.at(i));
+
+    return retrieveQuery;
+}
+
+QList<QVariantList> DBManager::executeSelectQuery(QSqlQuery &query){
+    QList < QVariantList > results;
+    if (!query.isValid()) return results;
+
+    if (query.exec()){
+        int records = query.record().count();
+        if (this->hasQuerySize()){
+            int rows = query.size();
+            for (int i = 0; i < rows; ++i){
+                results << QVariantList();
+                for (int j = 0; j < records; ++j){
+                    results[i] << query.value(j);
+                }
+            }
+        }
+        else {
+            int currentRow = 0;
+            while(query.next()){
+                results << QVariantList();
+
+                for (int i = 0; i < records; ++i)
+                    results[currentRow] << query.value(i);
+                currentRow++;
+            }
+        }
+    }
+
+    return results;
 }
