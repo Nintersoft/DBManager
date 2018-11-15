@@ -4,7 +4,7 @@
 # Developer: Mauro Mascarenhas de Araújo
 # Contact: mauro.mascarenhas@nintersoft.com
 # License: Nintersoft Open Source Code Licence
-# Date: 06 of November of 2018
+# Date: 15 of November of 2018
 # Version: 2.0.4.1
 #
 #-------------------------------------------------

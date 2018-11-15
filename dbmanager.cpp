@@ -4,7 +4,7 @@
 # Developer: Mauro Mascarenhas de Araújo
 # Contact: mauro.mascarenhas@nintersoft.com
 # License: Nintersoft Open Source Code Licence
-# Date: 16 of October of 2018
+# Date: 15 of November of 2018
 #
 ------------------------------------------------- */
 
@@ -13,11 +13,10 @@
 DBManager* DBManager::currentInstance = NULL;
 
 DBManager::DBManager(const DBManager::DBData &data) :
-    QSqlDatabase(){
+    QSqlDatabase( data.connectionName().isEmpty() ?
+                      QSqlDatabase::addDatabase(getConnectionType(data.connectionType())) :
+                      QSqlDatabase::addDatabase(getConnectionType(data.connectionType()), data.connectionName())){
     this->setDBPrefix(data.tablePrefix());
-    if (data.connectionName().isEmpty() || data.connectionName() == "default")
-        QSqlDatabase::addDatabase(getConnectionType(data.connectionType()));
-    else QSqlDatabase::addDatabase(getConnectionType(data.connectionType()), data.connectionName());
     this->setDatabaseData(data);
 
     this->driverHasQuerySize = this->driver()->hasFeature(QSqlDriver::QuerySize);
@@ -28,14 +27,14 @@ DBManager::~DBManager(){
     this->removeDatabase(dbData.connectionName());
 }
 
-DBManager& DBManager::getInstance(const DBData &data){
+DBManager* DBManager::getInstance(const DBData &data){
     if (!currentInstance){
         if (data.databaseName().isNull() || data.connectionType() == UNDEFINED)
-            throw std::invalid_argument("");
+            throw std::invalid_argument("Database name is empty or database type is undefined.");
 
         currentInstance = new DBManager(data);
     }
-    return *currentInstance;
+    return currentInstance;
 }
 
 bool DBManager::removeInstance(){
@@ -263,14 +262,6 @@ QVariantList DBManager::retrieveRow(const QString &tableName, const QStringList 
         }
     }
     return retrievedData;
-}
-
-QList<QVariantList> DBManager::retrieveAll(const QString &tableName, const QStringList &orderby){
-    QSqlQuery retrieveQuery = buildBindedQuery(tableName, QStringList(),
-                                               QStringList(), QVariantList(),
-                                               "=", QStringList(),
-                                               orderby);
-    return executeSelectQuery(retrieveQuery);
 }
 
 QList<QVariantList> DBManager::retrieveAll(const QString &tableName, const QStringList &columns,
@@ -533,7 +524,7 @@ QString DBManager::buildQuery(const QString &tableName, const QStringList &colum
 
     QString command = "SELECT ";
     if (columnName.isEmpty())
-         command += " *";
+         command += "*";
     else {
         for (int i = 0; i < columnsN; ++i)
             command += (columnName.at(i) + ", ");
@@ -590,17 +581,16 @@ QSqlQuery DBManager::buildBindedQuery(const QString &tableName, const QStringLis
 
 QList<QVariantList> DBManager::executeSelectQuery(QSqlQuery &query){
     QList < QVariantList > results;
-    if (!query.isValid()) return results;
 
     if (query.exec()){
         int records = query.record().count();
+
         if (this->hasQuerySize()){
             int rows = query.size();
             for (int i = 0; i < rows; ++i){
                 results << QVariantList();
-                for (int j = 0; j < records; ++j){
+                for (int j = 0; j < records; ++j)
                     results[i] << query.value(j);
-                }
             }
         }
         else {
