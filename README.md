@@ -41,7 +41,7 @@ This class has been created with students and young programmers in mind, making 
 You are able to get the proper support and documentation in order to use this project on its [page at Nintersoft's website](https://www.nintersoft.com/en/portfolio/dbmanager/) or yet on its [documentation page](https://docwiki.nintersoft.com/en/dbmanager/).
 
 ## Features:
-- SQLITE and MySQL support.
+- Supports every database which is also supported by QSqlDatabase class.
 - SQL-ANSI queries generation.
 - Database interface of ease use.
 - Support to customized queries (advanced).
