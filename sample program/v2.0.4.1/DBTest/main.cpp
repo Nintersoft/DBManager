@@ -20,7 +20,7 @@
 
 #include "dbmanager.h"
 
-#define SQLITET
+#define MYSQLT
 
 int main(int argc, char *argv[])
 {
@@ -155,6 +155,7 @@ int main(int argc, char *argv[])
                                               QStringList() << "AGE");
 
     qDebug() << "\nRetrieve all rows .:)";
+    qDebug() << myDB->retrieveAll("testTable");
     qDebug() << myDB->retrieveAll("testTable", QStringList() << "NAME" << "PARENT");
 
     qDebug() << "\nRetrieve all rows [COND] .:";

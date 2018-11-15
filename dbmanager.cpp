@@ -433,11 +433,9 @@ DBManager::DBConnectionType DBManager::connectionType(){
 bool DBManager::setConnectionName(const QString &cName){
     if (this->isOpen()) return false;
 
-    QSqlDatabase::removeDatabase(this->dbData.databaseName());
-    if (cName.isEmpty() || cName == "default")
-        QSqlDatabase::addDatabase(getConnectionType(this->dbData.connectionType()));
-    else QSqlDatabase::addDatabase(getConnectionType(this->dbData.connectionType()), cName);
     this->dbData.setConnectionName(cName);
+    removeInstance();
+    getInstance(this->dbData);
 
     return setDatabaseData(this->dbData);
 }
@@ -587,20 +585,17 @@ QList<QVariantList> DBManager::executeSelectQuery(QSqlQuery &query){
 
         if (this->hasQuerySize()){
             int rows = query.size();
-            for (int i = 0; i < rows; ++i){
+            for (int i = 0; i < rows && query.next(); ++i){
                 results << QVariantList();
                 for (int j = 0; j < records; ++j)
                     results[i] << query.value(j);
             }
         }
         else {
-            int currentRow = 0;
-            while(query.next()){
+            for (int i = 0; query.next(); ++i){
                 results << QVariantList();
-
-                for (int i = 0; i < records; ++i)
-                    results[currentRow] << query.value(i);
-                currentRow++;
+                for (int j = 0; j < records; ++j)
+                    results[i] << query.value(j);
             }
         }
     }

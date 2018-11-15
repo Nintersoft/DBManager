@@ -56,6 +56,13 @@ public:
                 this->databaseConnectionTypeS = UNDEFINED;
                 this->databaseNumericalPrecisionPolicy = QSql::LowPrecisionDouble;
                 this->databasePort = -1;
+                this->databaseHostName =
+                this->databaseNameS =
+                this->databaseUserame =
+                this->databasePassword =
+                this->databaseConnectionName =
+                this->databaseConnectionOptions =
+                this->databaseTablePrefix = QString();
             }
             ~DBData(){}
 
@@ -63,7 +70,7 @@ public:
             inline void setDatabaseName(const QString &name){ this->databaseNameS = name; }
             inline void setUserName(const QString &name){ this->databaseUserame = name; }
             inline void setPassword(const QString &password){ this->databasePassword = password; }
-            inline void setConnectionName(const QString &cName){ this->databaseConnectionOptions = cName; }
+            inline void setConnectionName(const QString &cName){ this->databaseConnectionName = cName; }
             inline void setConnectOptions(const QString &options){ this->databaseConnectionOptions = options; }
             inline void setTablePrefix(const QString &prefix){ this->databaseTablePrefix = prefix; }
             inline void setNumericalPrecisionPolicy(QSql::NumericalPrecisionPolicy precisionPolicy){ this->databaseNumericalPrecisionPolicy = precisionPolicy; }
@@ -127,7 +134,7 @@ public:
                                 const QVariantList &condition, QStringList columnName,
                                 const QString &operation = "=");
 
-    QList< QVariantList > retrieveAll(const QString &tableName, const QStringList &columns,
+    QList< QVariantList > retrieveAll(const QString &tableName, const QStringList &columns = QStringList(),
                                           const QStringList &groupby = QStringList(),
                                           const QStringList &orderby = QStringList());
 
