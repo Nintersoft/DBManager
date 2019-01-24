@@ -4,7 +4,7 @@
 # Developer: Mauro Mascarenhas de Araújo
 # Contact: mauro.mascarenhas@nintersoft.com
 # License: Nintersoft Open Source Code Licence
-# Date: 15 of November of 2018
+# Date: 23 of January of 2019
 #
 ------------------------------------------------- */
 
@@ -264,7 +264,7 @@ QVariantList DBManager::retrieveRow(const QString &tableName, const QStringList 
     return retrievedData;
 }
 
-QList<QVariantList> DBManager::retrieveAll(const QString &tableName, const QStringList &columns,
+QList< QVariantList > DBManager::retrieveAll(const QString &tableName, const QStringList &columns,
                                             const QStringList &groupby, const QStringList &orderby){
     QSqlQuery retrieveQuery = buildBindedQuery(tableName, columns,
                                                QStringList(), QVariantList(),
@@ -272,18 +272,18 @@ QList<QVariantList> DBManager::retrieveAll(const QString &tableName, const QStri
     return executeSelectQuery(retrieveQuery);
 }
 
-QList<QVariantList> DBManager::retrieveAllCond(const QString &tableName, const QString &columnCondition,
+QList< QVariantList > DBManager::retrieveAllCond(const QString &tableName, const QString &columnCondition,
                                                    const QVariant &condition, const QString &operation,
                                                    const QStringList &orderby){
     QSqlQuery retrieveQuery = buildBindedQuery(tableName, QStringList(),
                                                QStringList() << columnCondition,
-                                               QList< QVariant >() << condition,
+                                               QVariantList() << condition,
                                                operation, QStringList(),
                                                orderby);
     return executeSelectQuery(retrieveQuery);
 }
 
-QList<QVariantList> DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnCondition,
+QList< QVariantList > DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnCondition,
                                                    const QVariantList &condition, const QString &operation,
                                                    const QStringList &orderby){
     QSqlQuery retrieveQuery = buildBindedQuery(tableName, QStringList(),
@@ -293,19 +293,19 @@ QList<QVariantList> DBManager::retrieveAllCond(const QString &tableName, const Q
     return executeSelectQuery(retrieveQuery);
 }
 
-QList<QVariantList> DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnName,
+QList< QVariantList > DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnName,
                                                    const QString &columnCondition, const QVariant &condition,
                                                    const QString &operation, const QStringList &groupby,
                                                    const QStringList &orderby){
     QSqlQuery retrieveQuery = buildBindedQuery(tableName, columnName,
                                                QStringList() << columnCondition,
-                                               QList< QVariant >() << condition,
+                                               QVariantList() << condition,
                                                operation, groupby,
                                                orderby);
     return executeSelectQuery(retrieveQuery);
 }
 
-QList<QVariantList> DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnName,
+QList< QVariantList > DBManager::retrieveAllCond(const QString &tableName, const QStringList &columnName,
                                                    const QStringList &columnCondition, const QVariantList &condition,
                                                    const QString &operation, const QStringList &groupby,
                                                    const QStringList &orderby){
@@ -511,7 +511,7 @@ QString DBManager::getConnectionType(DBConnectionType cType){
 QString DBManager::buildQuery(const QString &tableName, const QStringList &columnName,
                                   const QStringList &columnCondition, const QVariantList &condition,
                                   const QString &operation, const QStringList &groupby,
-                                  const QStringList &orderby){
+                                  const QStringList &orderby, const QStringList &bindFields){
     if (tableName.isEmpty() || (columnCondition.size() != condition.size()))
         return QString();
 
@@ -533,9 +533,17 @@ QString DBManager::buildQuery(const QString &tableName, const QStringList &colum
 
     if (!columnCondition.isEmpty()){
         command += " WHERE ";
-        for (int i = 0; i < columns; ++i)
-            command += (columnCondition.at(i) + " " + operation + " :" + columnCondition.at(i) + " AND ");
-        command += (columnCondition.at(columns) + " " + operation + " :" + columnCondition.at(columns));
+        if (bindFields.size() == columnCondition.size())
+        {
+            for (int i = 0; i < columns; ++i)
+                command += (columnCondition.at(i) + " " + operation + " :" + bindFields.at(i) + " AND ");
+            command += (columnCondition.at(columns) + " " + operation + " :" + bindFields.at(columns));
+        }
+        else {
+            for (int i = 0; i < columns; ++i)
+                command += (columnCondition.at(i) + " " + operation + " :" + columnCondition.at(i) + " AND ");
+            command += (columnCondition.at(columns) + " " + operation + " :" + columnCondition.at(columns));
+        }
     }
 
     if (!groupby.isEmpty()){
@@ -561,10 +569,14 @@ QSqlQuery DBManager::buildBindedQuery(const QString &tableName, const QStringLis
                                           const QStringList &columnCondition, const QVariantList &condition,
                                           const QString &operation, const QStringList &groupby,
                                           const QStringList &orderby){
+    QStringList bindFields(columnCondition);
+    for (int i = 0; i < bindFields.size(); ++i)
+        bindFields[i].replace(".", "_");
+
     QString command = buildQuery(tableName, columnName,
                                  columnCondition, condition,
                                  operation, groupby,
-                                 orderby);
+                                 orderby, bindFields);
 
     if (command.isEmpty()) return QSqlQuery();
     int columns = columnCondition.length();
@@ -572,12 +584,12 @@ QSqlQuery DBManager::buildBindedQuery(const QString &tableName, const QStringLis
     QSqlQuery retrieveQuery(QSqlDatabase::database(this->connectionName()));
     retrieveQuery.prepare(command);
     for (int i = 0; i < columns; ++i)
-        retrieveQuery.bindValue(":" + columnCondition.at(i), condition.at(i));
+        retrieveQuery.bindValue(":" + bindFields.at(i), condition.at(i));
 
     return retrieveQuery;
 }
 
-QList<QVariantList> DBManager::executeSelectQuery(QSqlQuery &query){
+QList< QVariantList > DBManager::executeSelectQuery(QSqlQuery &query){
     QList < QVariantList > results;
 
     if (query.exec()){

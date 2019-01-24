@@ -4,7 +4,7 @@
 # Developer: Mauro Mascarenhas de Araújo
 # Contact: mauro.mascarenhas@nintersoft.com
 # License: Nintersoft Open Source Code Licence
-# Date: 15 of November of 2018
+# Date: 23 of January of 2019
 #
 ------------------------------------------------- */
 
@@ -142,11 +142,11 @@ public:
                                               const QString &columnCondition, const QVariant &condition,
                                               const QString &operation = "=",
                                               const QStringList &orderby = QStringList());
-    QList<QVariantList> retrieveAllCond(const QString &tableName,
+    QList< QVariantList > retrieveAllCond(const QString &tableName,
                                           const QStringList &columnCondition, const QVariantList &condition,
                                           const QString &operation = "=",
                                           const QStringList &orderby = QStringList());
-    QList<QVariantList> retrieveAllCond(const QString &tableName, const QStringList &columnName,
+    QList< QVariantList > retrieveAllCond(const QString &tableName, const QStringList &columnName,
                                           const QString &columnCondition, const QVariant &condition,
                                           const QString &operation = "=",
                                           const QStringList &groupby = QStringList(),
@@ -196,7 +196,8 @@ private:
                            const QVariantList &condition = QVariantList(),
                            const QString &operation = "=",
                            const QStringList &groupby = QStringList(),
-                           const QStringList &orderby = QStringList());
+                           const QStringList &orderby = QStringList(),
+                           const QStringList &bindFields = QStringList());
 
     QSqlQuery buildBindedQuery(const QString &tableName, const QStringList &columnName = QStringList(),
                                    const QStringList &columnCondition = QStringList(),
@@ -205,7 +206,7 @@ private:
                                    const QStringList &groupby = QStringList(),
                                    const QStringList &orderby = QStringList());
 
-    QList<QVariantList> executeSelectQuery(QSqlQuery &query);
+    QList< QVariantList > executeSelectQuery(QSqlQuery &query);
 
     static DBManager *currentInstance;
 
